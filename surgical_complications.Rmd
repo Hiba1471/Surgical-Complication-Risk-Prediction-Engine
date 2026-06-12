@@ -1,0 +1,684 @@
+---
+title: "Surgical Complication Prediction"
+author: "Hiba Khan"
+date: "2026-05-30"
+output:
+  html_document:
+    toc: true
+    toc_float: true
+    toc_depth: 3
+    theme: flatly
+    highlight: tango
+    code_folding: show
+params:
+  data_path: "/share/dsa435601s26/data/"
+  my_path:   "/share/dsa435601s26/hakhan4/"
+  load_run:  FALSE
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+  echo    = TRUE,
+  message = FALSE,
+  warning = FALSE,
+  fig.width  = 9,
+  fig.height = 6
+)
+
+seed <- 2024
+set.seed(seed)
+
+.libPaths(c("/share/dsa435601s26/installed_libraries", .libPaths()))
+
+library(dplyr)
+library(tidyr)
+library(readxl)
+library(skimr)
+library(janitor)
+library(rsample)
+library(fastDummies)
+library(recipes)
+```
+
+------------------------------------------------------------------------
+
+## 1. Read and Explore the Dataset
+
+```{r load-data}
+data_file <- paste0(params$data_path, "Surgical-deepnet.csv")
+df <- read.csv(data_file, sep = ",") %>%
+  janitor::clean_names()
+
+cat("Raw data dimensions:\n")
+print(dim(df))
+print(names(df))
+```
+
+### Outcome Distribution
+
+The target variable `complication` is binary: 1 = complication occurred, 0 = no complication. We expect moderate class imbalance.
+
+```{r outcome-distribution}
+outcome_distribution <- df %>%
+  count(complication) %>%
+  mutate(percent = round(n / sum(n) * 100, 1))
+
+knitr::kable(outcome_distribution, caption = "Distribution of outcome (complication)")
+
+# Confirm binary outcome
+stopifnot(all(df$complication %in% c(0, 1)))
+```
+
+------------------------------------------------------------------------
+
+## 2. Scope-Aligned Filtering and Outcome Preparation
+
+`mort30` is removed because the objective is to predict surgical complications, not mortality. No patient subgroup filtering is applied in the final scope.
+
+```{r filter-data}
+df_filtered <- df %>%
+  select(-mort30)
+
+cat("Filtered data dimensions:\n")
+print(dim(df_filtered))
+```
+
+```{r skim-filtered, results='markup'}
+skimr::skim(df_filtered)
+```
+
+------------------------------------------------------------------------
+
+## 3. Train / Test Partitioning
+
+A random 70/30 split stratified by `complication` ensures both sets preserve the outcome balance.
+
+```{r split-data}
+split    <- initial_split(df_filtered, prop = 0.70, strata = "complication")
+trainDat <- training(split)
+testDat  <- testing(split)
+
+cat("Training rows:", nrow(trainDat), "\n")
+cat("Testing rows: ", nrow(testDat),  "\n")
+cat("Split check:  ", nrow(trainDat) + nrow(testDat) == nrow(df_filtered), "\n")
+```
+
+------------------------------------------------------------------------
+
+## 4. Missing-Value Checks
+
+```{r missing-values}
+missing_summary <- sapply(trainDat, function(x) sum(is.na(x)))
+missing_summary <- missing_summary[missing_summary > 0]
+
+if (length(missing_summary) == 0) {
+  cat("No missing values found. Imputation is not required.\n")
+} else {
+  print(missing_summary)
+}
+```
+
+------------------------------------------------------------------------
+
+## 5. One-Hot Encoding
+
+Dummy variables are created for `asa_status`, `ahrq_ccs`, and `race`. Original columns are retained alongside the dummies. Dummy columns are aligned across train and test to handle categories that appear in only one split.
+
+```{r dummy-encoding}
+categorical_to_dummy <- c("asa_status", "ahrq_ccs", "race")
+
+trainDat <- fastDummies::dummy_cols(
+  trainDat,
+  select_columns        = categorical_to_dummy,
+  remove_selected_columns = FALSE,
+  remove_first_dummy    = FALSE
+)
+
+testDat <- fastDummies::dummy_cols(
+  testDat,
+  select_columns        = categorical_to_dummy,
+  remove_selected_columns = FALSE,
+  remove_first_dummy    = FALSE
+)
+
+# Align columns across splits
+in_train_not_test <- setdiff(names(trainDat), names(testDat))
+in_test_not_train <- setdiff(names(testDat),  names(trainDat))
+
+for (col in in_train_not_test) testDat[[col]]  <- 0
+for (col in in_test_not_train)  trainDat[[col]] <- 0
+
+testDat <- testDat[, names(trainDat)]
+stopifnot(isTRUE(all.equal(names(trainDat), names(testDat))))
+
+cat("Dummy encoding complete. Columns in training set:", ncol(trainDat), "\n")
+```
+
+------------------------------------------------------------------------
+
+## 6. Standardization
+
+Continuous predictors are standardized using training-set means and standard deviations. The same parameters are applied to the test set to prevent data leakage.
+
+```{r standardize}
+standardize_features <- function(data, features, suffix = "_std", params = NULL) {
+  computed_params <- list()
+
+  for (feat in features) {
+    if (!feat %in% names(data)) {
+      warning("Skipping missing feature: ", feat)
+      next
+    }
+
+    if (is.null(params)) {
+      feat_mean <- mean(data[[feat]], na.rm = TRUE)
+      feat_sd   <- sd(data[[feat]],   na.rm = TRUE)
+    } else {
+      feat_mean <- params[[feat]]$mean
+      feat_sd   <- params[[feat]]$sd
+    }
+
+    if (is.na(feat_sd) || feat_sd == 0) {
+      warning("Feature has zero/undefined standard deviation: ", feat)
+      feat_sd <- 1
+    }
+
+    computed_params[[feat]] <- list(mean = feat_mean, sd = feat_sd)
+    data[[paste0(feat, suffix)]] <- (data[[feat]] - feat_mean) / feat_sd
+  }
+
+  list(data = data, params = computed_params)
+}
+
+features_to_scale <- c(
+  "bmi", "baseline_charlson", "mortality_rsi",
+  "ccs_mort30rate", "ccs_complication_rate",
+  "complication_rsi", "age", "hour"
+)
+
+train_scaled <- standardize_features(trainDat, features_to_scale)
+trainDat     <- train_scaled$data
+
+test_scaled  <- standardize_features(testDat, features_to_scale, params = train_scaled$params)
+testDat      <- test_scaled$data
+
+cat("Standardization complete.\n")
+```
+
+------------------------------------------------------------------------
+
+## 7. Feature Engineering
+
+Four new features are created to capture clinically meaningful risk patterns.
+
+| Feature             | Description                              |
+|---------------------|------------------------------------------|
+| `comorbidity_count` | Sum of all baseline condition indicators |
+| `obese`             | BMI ≥ 30                                 |
+| `weekend_surgery`   | Surgery on Saturday or Sunday            |
+| `night_surgery`     | Surgery at or before 7am or at/after 5pm |
+
+```{r feature-engineering}
+add_engineered_features <- function(data) {
+  data %>%
+    mutate(
+      comorbidity_count = baseline_cancer + baseline_cvd + baseline_dementia +
+        baseline_diabetes + baseline_digestive + baseline_osteoart +
+        baseline_psych + baseline_pulmonary,
+      obese          = as.numeric(bmi >= 30),
+      weekend_surgery = as.numeric(dow == 0 | dow == 6),
+      night_surgery   = as.numeric(hour >= 17 | hour <= 7)
+    )
+}
+
+trainDat <- add_engineered_features(trainDat)
+testDat  <- add_engineered_features(testDat)
+
+# Final consistency checks
+stopifnot("complication" %in% names(trainDat))
+stopifnot("complication" %in% names(testDat))
+stopifnot(all(trainDat$complication %in% c(0, 1)))
+stopifnot(all(testDat$complication  %in% c(0, 1)))
+stopifnot(isTRUE(all.equal(names(trainDat), names(testDat))))
+
+cat("Feature engineering complete.\n")
+```
+
+```{r skim-train, results='markup'}
+skimr::skim(trainDat)
+```
+
+```{r save-processed}
+saveRDS(trainDat, file = paste0(params$my_path, "trainDat.rds"))
+saveRDS(testDat,  file = paste0(params$my_path, "testDat.rds"))
+cat("Processed datasets saved.\n")
+```
+
+------------------------------------------------------------------------
+
+## 8. Learner Specification
+
+Three predictor sets of increasing complexity are defined. Each is paired with one or more learners.
+
+```{r predictor-sets}
+outcomeName <- "complication"
+
+predSet_bm <- c(
+  "bmi", "age",
+  "asa_status_1", "asa_status_2",
+  "baseline_cancer", "baseline_cvd", "baseline_dementia",
+  "baseline_diabetes", "baseline_digestive", "baseline_osteoart",
+  "baseline_psych", "baseline_pulmonary", "baseline_charlson"
+)
+
+predSet_extended <- unique(c(
+  predSet_bm,
+  paste0("ahrq_ccs_", 0:20),
+  "weekend_surgery", "gender", "ccs_complication_rate",
+  "race_1", "race_2", "comorbidity_count"
+))
+
+predSet_kitchensink <- unique(c(
+  predSet_extended,
+  "complication_rsi", "mortality_rsi"
+))
+
+allPredsets <- list(
+  predSet_bm          = predSet_bm,
+  predSet_extended    = predSet_extended,
+  predSet_kitchensink = predSet_kitchensink
+)
+
+specifiedLearners <- list(
+  predSet_bm          = c("glm"),
+  predSet_extended    = c("glm", "lasso", "random_forest"),
+  predSet_kitchensink = c("lasso", "random_forest", "xgboost")
+)
+
+# Validation
+missingNames <- setdiff(names(specifiedLearners), names(allPredsets))
+if (length(missingNames) > 0) {
+  stop("Learner names do not match predictor sets: ", paste(missingNames, collapse = ", "))
+}
+
+cat("Predictor set sizes:\n")
+cat("  Benchmark:    ", length(predSet_bm),          "predictors\n")
+cat("  Extended:     ", length(predSet_extended),     "predictors\n")
+cat("  Kitchen sink: ", length(predSet_kitchensink),  "predictors\n")
+```
+
+```{r recipes-cv}
+recipes_list <- lapply(names(allPredsets), function(name) {
+  formula <- as.formula(
+    paste(outcomeName, "~", paste(allPredsets[[name]], collapse = "+"))
+  )
+  recipe(formula, data = trainDat) %>%
+    step_bin2factor(all_of(outcomeName))
+})
+names(recipes_list) <- names(allPredsets)
+saveRDS(recipes_list, file = paste0(params$my_path, "recipes.rds"))
+
+recipe_main <- recipe(as.formula(paste(outcomeName, "~ .")), data = trainDat) %>%
+  step_bin2factor(all_of(outcomeName))
+saveRDS(recipe_main, file = paste0(params$my_path, "recipe_main.rds"))
+
+# Cross-validation and tuning parameters
+cvFolds     <- 5
+stratVar    <- "complication"
+gridSize    <- 5
+tuneMetrics <- "pr_auc"
+
+cvParams <- list(
+  cvFolds     = cvFolds,
+  stratVar    = stratVar,
+  gridSize    = gridSize,
+  tuneMetrics = tuneMetrics
+)
+
+equityVars         <- c("gender", "race_0", "race_1", "race_2")
+positiveProportion <- mean(trainDat[[outcomeName]] == 1)
+
+learnerSpec <- list(
+  my_path            = params$my_path,
+  trainDataName      = "trainDat.rds",
+  testDataName       = "testDat.rds",
+  outcomeName        = outcomeName,
+  allPredsets        = allPredsets,
+  specifiedLearners  = specifiedLearners,
+  cvParams           = cvParams,
+  equityVars         = equityVars,
+  positiveProportion = positiveProportion
+)
+
+saveRDS(learnerSpec, file = paste0(params$my_path, "learnerSpec.rds"))
+cat("Learner specifications saved.\n")
+```
+
+------------------------------------------------------------------------
+
+## 9. Model Training and Validation
+
+```{r load-helpers}
+source("/share/dsa435601s26/PA-Class/R/packages.R")
+source("/share/dsa435601s26/PA-Class/R/learner_training.R")
+source("/share/dsa435601s26/PA-Class/R/learner_training_helpers.R")
+source("/share/dsa435601s26/PA-Class/R/equity_metrics.R")
+source("/share/dsa435601s26/PA-Class/R/performance_metrics.R")
+source("/share/dsa435601s26/PA-Class/R/plots_updated.R")
+```
+
+```{r parallel-setup}
+if (requireNamespace("doParallel", quietly = TRUE)) {
+  library(doParallel)
+  n_cores <- max(1, parallel::detectCores() - 1)
+  cl      <- makePSOCKcluster(n_cores)
+  registerDoParallel(cl)
+  cat("Parallel processing enabled with", n_cores, "cores\n")
+}
+```
+
+```{r train-or-load}
+if (isTRUE(params$load_run)) {
+  learnersResults <- readRDS(paste0(params$my_path, "learnerResults.rds"))
+  cat("Loaded existing learner results.\n")
+} else {
+  start_time      <- Sys.time()
+  learnersResults <- train_learners(
+    trainDat    = trainDat,
+    learnerSpec = learnerSpec,
+    recipes     = recipes_list,
+    mainRecipes = recipe_main
+  )
+  end_time <- Sys.time()
+  cat("Training completed in",
+      round(difftime(end_time, start_time, units = "mins"), 1), "minutes\n")
+  saveRDS(learnersResults, file = paste0(params$my_path, "learnerResults.rds"))
+}
+
+modelResults <- learnersResults$modelResults
+predProbs    <- learnersResults$predProbs
+
+cat("Learners trained:", length(table(predProbs$learnerName)), "\n")
+```
+
+### Validation Plots
+
+```{r validation-plots}
+plot_predicted_probabilities(predProbs)
+plot_predicted_probabilities_split(predProbs, learnerSpec$outcomeName)
+plot_roc_curve_with_reference(learnersResults$rocResults, referencePredSet = "predSet_bm")
+plot_pr_curve_with_reference(learnersResults$prResults,  referencePredSet = "predSet_bm")
+```
+
+### Classification Metrics at Selected Thresholds
+
+```{r threshold-metrics}
+selectedLearners  <- c(
+  "random_forest_predSet_extended",
+  "random_forest_predSet_kitchensink",
+  "xgboost_predSet_kitchensink"
+)
+selectedThresholds <- c(0.25, 0.35)
+
+learnerMetricsThres <- calc_threshold_metrics(
+  predProbs   = predProbs,
+  outcomeName = learnerSpec$outcomeName,
+  thresholds  = selectedThresholds
+)
+
+rateMetrics  <- c("tpr", "fpr", "tnr", "fnr", "ppv", "f1", "acc")
+countMetrics <- c("tpc", "fpc", "tnc", "fnc")
+allMetrics   <- c(rateMetrics, countMetrics)
+
+plotData <- learnerMetricsThres %>%
+  filter(learnerName %in% selectedLearners, threshold %in% selectedThresholds) %>%
+  pivot_longer(cols = all_of(allMetrics), names_to = "metricType", values_to = "value")
+
+outcomeDescription <- c("No surgical complications", "Surgical complications")
+
+conf_mat_bar_plot(
+  plotData           = plotData %>% filter(metricType %in% rateMetrics),
+  metricType         = "rate",
+  outcomeDescription = outcomeDescription,
+  graphTitle         = "Classification Performance Metrics"
+)
+```
+
+### Fairness Assessment — Validation Set
+
+```{r fairness-validation}
+for (equityVar in learnerSpec$equityVars) {
+  if (equityVar %in% names(trainDat)) {
+    predProbsWithGroup <- predProbs %>%
+      bind_cols(trainDat %>% select(all_of(equityVar)))
+
+    print(plot_pred_probs(
+      predProbsWithGroup,
+      learner   = "random_forest_predSet_extended",
+      group_var = equityVar
+    ))
+
+    print(classification_metrics_by_group(
+      predProbs   = predProbsWithGroup,
+      outcomeName = learnerSpec$outcomeName,
+      learnerName = "random_forest_predSet_extended",
+      threshold   = selectedThresholds,
+      groupVar    = equityVar
+    ))
+  }
+}
+```
+
+### Final Validation Model Selection
+
+The selected model is `random_forest_predSet_extended` at a threshold of 0.25. The lower threshold reflects the clinical priority of catching likely complications, where the cost of a false negative outweighs the cost of a false positive.
+
+```{r final-selection}
+finalLearner     <- "random_forest_predSet_extended"
+finalThresholds  <- c(0.25)
+
+cat("Selected learner:   ", finalLearner,    "\n")
+cat("Selected threshold: ", finalThresholds, "\n")
+
+modelResults %>%
+  filter(learnerName == finalLearner) %>%
+  select(.metric, mean, std_err) %>%
+  mutate(across(where(is.numeric), ~ round(.x, 3))) %>%
+  knitr::kable(caption = "Validation metrics for selected learner")
+
+learnerMetricsThres %>%
+  filter(learnerName == finalLearner, threshold %in% finalThresholds) %>%
+  select(threshold, all_of(allMetrics)) %>%
+  mutate(across(where(is.numeric), ~ round(.x, 3))) %>%
+  knitr::kable(caption = "Classification metrics at selected threshold")
+```
+
+```{r save-validation}
+validateLearnersResults <- list(
+  modelResults      = modelResults %>% filter(learnerName == finalLearner),
+  predProbs         = predProbs    %>% filter(learnerName == finalLearner),
+  modelFits         = learnersResults$modelFits[finalLearner],
+  selectedThresholds = finalThresholds
+)
+
+saveRDS(validateLearnersResults, file = paste0(params$my_path, "validateLearnersResults.rds"))
+
+# Stop parallel cluster if it was started
+if (exists("cl")) parallel::stopCluster(cl)
+```
+
+------------------------------------------------------------------------
+
+## 10. Final Test-Set Evaluation
+
+```{r load-validation-results}
+trainResults      <- readRDS(paste0(params$my_path, "validateLearnersResults.rds"))
+trainPredProbs    <- trainResults$predProbs
+outcomeName       <- learnerSpec$outcomeName
+learnerName       <- trainResults$modelResults$learnerName[[1]]
+selectedThreshold <- trainResults$selectedThresholds
+```
+
+```{r predictor-check}
+model_vars        <- colnames(trainResults$modelFits[[learnerName]]$pre$mold$predictors)
+missing_in_test   <- setdiff(model_vars, names(testDat))
+
+if (length(missing_in_test) == 0) {
+  cat("All required predictors are present in the test dataset.\n")
+} else {
+  stop("Missing predictors in test set: ", paste(missing_in_test, collapse = ", "))
+}
+```
+
+### Key Predictor Distribution: Training vs. Test
+
+```{r distribution-check}
+key_predictors <- intersect(
+  c("age", "bmi", "asa_status_1", "asa_status_2",
+    "ccs_complication_rate", "comorbidity_count"),
+  model_vars
+)
+
+for (pred in key_predictors) {
+  cat("Variable:", pred, "\n")
+  cat("  Training — mean:", round(mean(trainDat[[pred]]), 3),
+      "| sd:", round(sd(trainDat[[pred]]), 3), "\n")
+  cat("  Test     — mean:", round(mean(testDat[[pred]]),  3),
+      "| sd:", round(sd(testDat[[pred]]),  3), "\n\n")
+}
+```
+
+```{r test-predictions}
+testPredProbs <- apply_learner_to_test(
+  modelFit    = trainResults$modelFits[[learnerName]],
+  testDat     = testDat,
+  learnerName = learnerName,
+  outcomeName = outcomeName
+)
+```
+
+### Discrimination Metrics
+
+```{r test-discrimination}
+testRocResults <- calc_roc_curve(testPredProbs, outcomeName = outcomeName)
+testPrResults  <- calc_pr_curve(testPredProbs,  outcomeName = outcomeName)
+testMetrics    <- calc_auc_metrics(testPredProbs, outcomeName = outcomeName)
+
+plot_roc_curve_with_reference(
+  testRocResults,
+  referencePredSet = unique(testRocResults$predSet),
+  title = "Test Set ROC Curve"
+)
+plot_pr_curve_with_reference(
+  testPrResults,
+  referencePredSet = unique(testPrResults$predSet),
+  title = "Test Set Precision-Recall Curve"
+)
+```
+
+### Validation vs. Test Performance
+
+```{r val-vs-test}
+comparison <- tibble(
+  Metric       = c("ROC-AUC", "PR-AUC"),
+  Validation   = c(
+    round(trainResults$modelResults %>% filter(.metric == "roc_auc") %>% pull(mean), 3),
+    round(trainResults$modelResults %>% filter(.metric == "pr_auc")  %>% pull(mean), 3)
+  ),
+  `Test Set`   = c(
+    round(testMetrics$roc_auc, 3),
+    round(testMetrics$pr_auc,  3)
+  )
+)
+
+knitr::kable(comparison, caption = "Validation vs. Test Discrimination Metrics")
+```
+
+### Classification Metrics at Selected Threshold
+
+```{r test-threshold-metrics}
+testMetricsThres <- calc_threshold_metrics(
+  predProbs   = testPredProbs,
+  outcomeName = outcomeName,
+  thresholds  = selectedThreshold
+)
+
+testMetricsThres %>%
+  mutate(across(where(is.numeric), ~ round(.x, 3))) %>%
+  knitr::kable(caption = "Test set classification metrics at threshold 0.25")
+
+plotData <- testMetricsThres %>%
+  filter(threshold %in% selectedThreshold) %>%
+  pivot_longer(cols = all_of(allMetrics), names_to = "metricType", values_to = "value")
+
+conf_mat_bar_plot(
+  plotData           = plotData %>% filter(metricType %in% rateMetrics),
+  metricType         = "rate",
+  outcomeDescription = outcomeDescription,
+  graphTitle         = "Test Set Classification Performance"
+)
+```
+
+### Fairness Assessment — Test Set
+
+```{r fairness-test}
+allEquityMetrics <- list()
+allEquityTests   <- list()
+
+for (equityVar in learnerSpec$equityVars) {
+  if (equityVar %in% names(testDat)) {
+
+    if (!(equityVar %in% names(testPredProbs))) {
+      testPredProbs <- testPredProbs %>%
+        bind_cols(testDat %>% select(all_of(equityVar)))
+    }
+
+    cat("Assessing fairness for:", equityVar, "\n")
+
+    print(plot_pred_probs(
+      testPredProbs,
+      learner   = unique(testPredProbs$learnerName),
+      group_var = equityVar
+    ))
+
+    allEquityMetrics[[equityVar]] <- classification_metrics_by_group(
+      predProbs   = testPredProbs,
+      outcomeName = outcomeName,
+      learnerName = learnerName,
+      threshold   = selectedThreshold,
+      groupVar    = equityVar
+    )
+
+    allEquityTests[[equityVar]] <- test_group_disparities(
+      predProbs   = testPredProbs,
+      outcomeName = outcomeName,
+      learnerName = learnerName,
+      threshold   = selectedThreshold,
+      groupVar    = equityVar
+    )
+  }
+}
+
+bind_rows(allEquityMetrics) %>%
+  mutate(across(where(is.numeric), ~ round(.x, 3))) %>%
+  knitr::kable(caption = "Fairness metrics by demographic group")
+
+bind_rows(allEquityTests) %>%
+  mutate(across(where(is.numeric), ~ round(.x, 3))) %>%
+  knitr::kable(caption = "Statistical tests for group disparities")
+```
+
+```{r save-final}
+finalResults <- list(
+  learnerName       = learnerName,
+  selectedThreshold = selectedThreshold,
+  testPredProbs     = testPredProbs,
+  testMetrics       = testMetrics,
+  testMetricsThres  = testMetricsThres,
+  equityMetrics     = bind_rows(allEquityMetrics),
+  equityTests       = bind_rows(allEquityTests)
+)
+
+saveRDS(finalResults, file = paste0(params$my_path, "finalTestResults.rds"))
+cat("Final test results saved.\n")
+```
