@@ -2,7 +2,7 @@
 
 A machine learning project for predicting post-surgical complication risk before surgery using patient demographics, baseline health conditions, procedure information, and clinical risk indicators.
 
-This project is designed as a **pre-operative risk prediction engine**. The goal is to help identify patients who may need closer monitoring, preventive planning, or additional clinical review before surgery.
+This project is designed as a **pre-operative risk prediction engine** using  the R Language. The goal is to help identify patients who may need closer monitoring, preventive planning, or additional clinical review before surgery.
 
 ## About This Project
 
@@ -155,8 +155,6 @@ The extended set plus:
 - Complication RSI
 - Mortality RSI
 
-The **extended predictor set** was selected for the final model because it provided strong performance without relying heavily on pre-built risk index scores.
-
 ## Modeling Approach
 
 Multiple model types were evaluated:
@@ -174,13 +172,10 @@ The final selected model was:
 random_forest_predSet_extended
 ```
 
-This model offered the best balance between predictive performance, complexity, and practical usefulness.
 
 ## Threshold Selection
 
 A threshold of **0.25** was selected instead of the default 0.50 threshold.
-
-This decision was made because the clinical cost of missing a true complication is higher than the cost of creating an unnecessary alert. Lowering the threshold allowed the model to identify more high-risk patients.
 
 
 ## Model Performance
@@ -196,9 +191,6 @@ The final model was evaluated on the held-out test set.
 | F1 Score | 0.741 |
 | False Positive Rate | 0.113 |
 
-The model generalized well from validation to test data, with no major performance drop on unseen records.
-
-
 ## Key Findings
 
 - Random Forest and XGBoost produced stronger class separation than simpler linear models.
@@ -208,8 +200,6 @@ The model generalized well from validation to test data, with no major performan
 - Fairness disparities were identified and reported transparently.
 - The model is technically promising but not ready for autonomous clinical deployment.
 
-## Programming Language
-- R
 
 
 ## Methods Used
