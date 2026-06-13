@@ -182,7 +182,6 @@ A threshold of **0.25** was selected instead of the default 0.50 threshold.
 
 This decision was made because the clinical cost of missing a true complication is higher than the cost of creating an unnecessary alert. Lowering the threshold allowed the model to identify more high-risk patients.
 
-At the selected threshold, the model favored sensitivity, making it more appropriate for a patient-safety use case.
 
 ## Model Performance
 
@@ -199,13 +198,6 @@ The final model was evaluated on the held-out test set.
 
 The model generalized well from validation to test data, with no major performance drop on unseen records.
 
-## Fairness Assessment
-
-Fairness was assessed across gender and race indicator variables.
-
-Although the model performed strongly overall, fairness analysis identified disparities in false positive rates across demographic groups. The most notable disparity appeared in the Race 2, category 1 subgroup, where the false positive rate was **0.244**, more than double the overall false positive rate of **0.113**.
-
-Because of these disparities, the model should **not** be deployed as a clinical decision tool without additional fairness mitigation, subgroup monitoring, and clinical validation.
 
 ## Key Findings
 
@@ -233,13 +225,19 @@ Because of these disparities, the model should **not** be deployed as a clinical
 - Feature engineering
 
 
+## Additional Files
 
-## Why This Project Matters
+This repository also includes supporting files for reviewing the full project:
 
-This project demonstrates an end-to-end healthcare machine learning workflow, including preprocessing, feature engineering, model comparison, threshold optimization, test-set evaluation, and fairness assessment.
+* **Final PDF Report** — A polished project report summarizing the objective, dataset, modeling strategy, performance results, fairness assessment, and final recommendations.
+* **R Markdown Source Code (`.Rmd`)** — The source analysis file containing the code used for data preparation, feature engineering, model training, evaluation, and reporting.
+* **Markdown Report Version** — A GitHub-friendly version of the PDF report, including images and visual outputs, so the full analysis can be viewed directly in the repository.
 
-It is especially relevant for healthcare analytics because it does not only focus on high predictive performance. It also considers practical deployment limits, fairness concerns, and clinical validation requirements.
+Together, these files provide both a high-level explanation of the project and the technical workflow behind the final results.
 
 ## Disclaimer
 
 This project is for educational and research purposes only. It is not a medical diagnostic tool and should not be used for clinical decision-making without further validation, fairness review, and approval from qualified healthcare professionals.
+
+
+
