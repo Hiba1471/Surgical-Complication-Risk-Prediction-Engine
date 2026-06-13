@@ -216,23 +216,11 @@ Because of these disparities, the model should **not** be deployed as a clinical
 - Fairness disparities were identified and reported transparently.
 - The model is technically promising but not ready for autonomous clinical deployment.
 
-## Recommended Next Steps
-
-Before real-world use, the following steps are recommended:
-
-- Clarify race and gender category labels in the source data
-- Investigate causes of subgroup false positive rate disparities
-- Apply fairness-aware threshold calibration
-- Consider fairness-constrained model training
-- Compare the model against existing clinical tools such as NSQIP
-- Add interpretability tools such as SHAP or partial dependence plots
-- Conduct retrospective clinical validation
-- Conduct a monitored prospective pilot before deployment
-- Review regulatory and legal considerations around demographic variables
-
-## Technologies Used
-
+## Programming Language
 - R
+
+
+## Methods Used
 - Random Forest
 - XGBoost
 - Logistic Regression
@@ -244,18 +232,7 @@ Before real-world use, the following steps are recommended:
 - One-hot encoding
 - Feature engineering
 
-## Repository Structure
 
-```text
-.
-├── README.md
-├── data/                 # Dataset or data access instructions
-├── notebooks/            # Exploratory analysis and modeling notebooks
-├── src/                  # Reusable preprocessing/modeling scripts
-├── figures/              # ROC, PR, calibration, and threshold visuals
-├── reports/              # Final report and supporting documentation
-└── results/              # Model outputs and evaluation summaries
-```
 
 ## Why This Project Matters
 
