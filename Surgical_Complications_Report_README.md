@@ -3,8 +3,6 @@
 **Final Report**  
 **Author:** Hiba Khan  
 **Date:** May 30, 2026  
-**Course:** DSA 435/495  
-**Status:** Confidential
 
 This report describes a predictive analytics project that modeled the risk of post-surgical complications using a dataset of 14,635 procedures. The final selected model — a random forest trained on an extended predictor set with a classification threshold of 0.25 — achieved a test ROC-AUC of 0.925 and PR-AUC of 0.876. While discrimination performance is strong, statistically significant fairness disparities across demographic groups mean the model should not be deployed in clinical practice without further bias mitigation, subgroup monitoring, and clinical validation.
 
