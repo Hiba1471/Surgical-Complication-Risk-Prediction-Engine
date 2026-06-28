@@ -184,7 +184,7 @@ Fairness was assessed across gender and race indicator variables. Disparities ob
 A higher false positive rate for a subgroup means patients in that group are more likely to be unnecessarily flagged as high-risk, potentially leading to extra monitoring, additional interventions, and increased resource use without clinical benefit. A lower true positive rate means patients in that group are less likely to receive preventive attention when they genuinely need it. Both types of disparity can erode patient trust and affect quality of care.
 
 | Variable | Category | TPR | FPR | PPV | FNR |
-|---|---:|---:|---:|---:|---:|---:|
+|---|---:|---:|---:|---:|---:|
 | Gender | 0 | 0.757 | 0.150 | 0.677 | 0.243 |
 | Gender | 1 | 0.816 | 0.085 | 0.728 | 0.184 |
 | Race 0 | 0 | 0.790 | 0.107 | 0.712 | 0.210 |
