@@ -219,7 +219,7 @@ The final model was evaluated on the held-out test set.
 
 This repository also includes supporting files for reviewing the full project:
 
-* **Final PDF Report** — A polished project report summarizing the objective, dataset, modeling strategy, performance results, fairness assessment, and final recommendations. (Open this in Chrome)
+* **Final PDF Report** — A polished project report summarizing the objective, dataset, modeling strategy, performance results, fairness assessment, and final recommendations. NOTE: Open this in Chrome
 * **R Markdown Source Code (`.Rmd`)** — The source analysis file containing the code used for data preparation, feature engineering, model training, evaluation, and reporting.
 * **Markdown Report Version** — A GitHub-friendly version of the PDF report, including images and visual outputs, so the full analysis can be viewed directly in the repository.
 
