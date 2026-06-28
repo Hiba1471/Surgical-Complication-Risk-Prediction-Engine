@@ -183,16 +183,16 @@ Fairness was assessed across gender and race indicator variables. Disparities ob
 
 A higher false positive rate for a subgroup means patients in that group are more likely to be unnecessarily flagged as high-risk, potentially leading to extra monitoring, additional interventions, and increased resource use without clinical benefit. A lower true positive rate means patients in that group are less likely to receive preventive attention when they genuinely need it. Both types of disparity can erode patient trust and affect quality of care.
 
-| Variable | Category | TPR | FPR | PPV | FNR | n |
+| Variable | Category | TPR | FPR | PPV | FNR |
 |---|---:|---:|---:|---:|---:|---:|
-| Gender | 0 | 0.757 | 0.150 | 0.677 | 0.243 | — |
-| Gender | 1 | 0.816 | 0.085 | 0.728 | 0.184 | — |
-| Race 0 | 0 | 0.790 | 0.107 | 0.712 | 0.210 | — |
-| Race 0 | 1 | 0.742 | 0.163 | 0.618 | 0.258 | — |
-| Race 1 | 0 | 0.753 | 0.179 | 0.625 | 0.247 | — |
-| Race 1 | 1 | 0.791 | 0.103 | 0.716 | 0.209 | — |
-| Race 2 | 0 | 0.785 | 0.109 | 0.704 | 0.215 | — |
-| Race 2 | 1 ⚠ | 0.783 | **0.244** | 0.643 | 0.217 | — |
+| Gender | 0 | 0.757 | 0.150 | 0.677 | 0.243 |
+| Gender | 1 | 0.816 | 0.085 | 0.728 | 0.184 |
+| Race 0 | 0 | 0.790 | 0.107 | 0.712 | 0.210 |
+| Race 0 | 1 | 0.742 | 0.163 | 0.618 | 0.258 |
+| Race 1 | 0 | 0.753 | 0.179 | 0.625 | 0.247 |
+| Race 1 | 1 | 0.791 | 0.103 | 0.716 | 0.209 |
+| Race 2 | 0 | 0.785 | 0.109 | 0.704 | 0.215 |
+| Race 2 | 1 ⚠ | 0.783 | **0.244** | 0.643 | 0.217 |
 
 **Table 8:** Test-set fairness metrics at threshold 0.25. The highlighted row (Race 2, category 1) shows an FPR of 0.244 — more than double the overall rate of 0.113.
 
