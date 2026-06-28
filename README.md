@@ -223,8 +223,6 @@ This repository also includes supporting files for reviewing the full project:
 * **R Markdown Source Code (`.Rmd`)** — The source analysis file containing the code used for data preparation, feature engineering, model training, evaluation, and reporting.
 * **Markdown Report Version** — A GitHub-friendly version of the PDF report, including images and visual outputs, so the full analysis can be viewed directly in the repository.
 
-Together, these files provide both a high-level explanation of the project and the technical workflow behind the final results.
-
 ## Disclaimer
 
 This project is for educational and research purposes only. It is not a medical diagnostic tool and should not be used for clinical decision-making without further validation, fairness review, and approval from qualified healthcare professionals.
